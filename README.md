@@ -1,6 +1,6 @@
-### JDoodle-AWS-Terraform-Assignment
+# JDoodle-AWS-Terraform-Assignment
 
-# Prerequistes:
+## Prerequistes:
   
   Step1: First create and AWS account
   Step2: First  install Terraform and AWS cli on my local system
