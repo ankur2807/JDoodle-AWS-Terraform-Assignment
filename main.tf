@@ -201,17 +201,7 @@ resource "aws_sns_topic_subscription" "email_subscription" {
   endpoint  = "goyalankur2807@gmail.com"  # Change this to your email address
 }
 
-# Create an SNS topic
-resource "aws_sns_topic" "scalingdown_alerts" {
-  name = "scalingdown-alerts-topic"
-}
 
-# Subscribe an email address to the SNS topic
-resource "aws_sns_topic_subscription1" "email_subscription" {
-  topic_arn = aws_sns_topic.scalingdown_alerts.arn
-  protocol  = "email"
-  endpoint  = "goyalankur2807@gmail.com"  # Change this to your email address
-}
 
 
 # Create CloudWatch Alarms for Auto Scaling Policies
@@ -234,7 +224,7 @@ resource "aws_cloudwatch_metric_alarm" "scale_up_alarm" {
   }
   #ok_actions          = [aws_sns_topic.scaling_alerts.arn]
   #ok_actions          = [aws_autoscaling_policy.scale_up_policy.arn]
-  alarm_actions       = [aws_autoscaling_policy.scale_up_policy.arn]
+  alarm_actions       = [aws_sns_topic.scaling_alerts.arn]
 }
 
 resource "aws_cloudwatch_metric_alarm" "scale_down_alarm" {
@@ -247,7 +237,7 @@ resource "aws_cloudwatch_metric_alarm" "scale_down_alarm" {
   statistic           = "Average"
   threshold           = 50  # Trigger when desired capacity is less than or equal to 2
 
-  alarm_actions       = [aws_autoscaling_policy.scale_down_policy.arn]
+  alarm_actions       = [aws_sns_topic.scaling_alerts.arn]
 }
 
 
