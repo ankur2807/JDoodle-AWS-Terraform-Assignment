@@ -189,6 +189,30 @@ resource "aws_autoscaling_policy" "scale_down_policy" {
   autoscaling_group_name = aws_autoscaling_group.autoscaling_group.name
 }
 
+# Create an SNS topic
+resource "aws_sns_topic" "scalingup_alerts" {
+  name = "scalingup-alerts-topic"
+}
+
+# Subscribe an email address to the SNS topic
+resource "aws_sns_topic_subscription" "email_subscription" {
+  topic_arn = aws_sns_topic.scalingup_alerts.arn
+  protocol  = "email"
+  endpoint  = "goyalankur2807@gmail.com"  # Change this to your email address
+}
+
+# Create an SNS topic
+resource "aws_sns_topic" "scalingdown_alerts" {
+  name = "scalingdown-alerts-topic"
+}
+
+# Subscribe an email address to the SNS topic
+resource "aws_sns_topic_subscription1" "email_subscription" {
+  topic_arn = aws_sns_topic.scalingdown_alerts.arn
+  protocol  = "email"
+  endpoint  = "goyalankur2807@gmail.com"  # Change this to your email address
+}
+
 
 # Create CloudWatch Alarms for Auto Scaling Policies
 resource "aws_cloudwatch_metric_alarm" "scale_up_alarm" {
