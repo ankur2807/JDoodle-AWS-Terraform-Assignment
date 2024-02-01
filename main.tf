@@ -1,27 +1,26 @@
 provider "aws" {
-  region = "us-east-2"  
+  region = "us-east-2"  # Change this to your desired region
 }
-
-
 # Create VPC
-resource "aws_vpc" "main" {
-  cidr_block = "10.10.0.0/16"
-  enable_dns_support = true
-  enable_dns_hostnames = true
+data "aws_vpc" "default" {
+  id = "vpc-06715e7197852424f"
 }
 
-# Create Subnets
-resource "aws_subnet" "subnet1" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.10.1.0/24"
-  availability_zone       = "us-east-2a"  
+data "aws_subnet" "subnet1" {
+  id = "subnet-0b6b31310178f04fd"
 }
 
-resource "aws_subnet" "subnet2" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.10.2.0/24"
-  availability_zone       = "us-east-2b"  
+data "aws_subnet" "subnet2" {
+  id = "subnet-011b0512b6d93aff6"
+
 }
+
+data "template_file" "user_data" {
+  template = file("${path.module}/userdata.sh.tpl")
+
+  
+  }
+
 
 # Create IAM Role and Policy for Auto Scaling
 resource "aws_iam_role" "autoscaling_role" {
@@ -34,8 +33,7 @@ resource "aws_iam_role" "autoscaling_role" {
     {
       "Effect": "Allow",
       "Principal": {
-        "Service": "ec2.amazonaws.com",
-        "Service": "lambda.amazonaws.com"
+        "Service": ["ec2.amazonaws.com", "lambda.amazonaws.com"]
       },
       "Action": "sts:AssumeRole"
     }
@@ -77,13 +75,72 @@ resource "aws_iam_role_policy_attachment" "autoscaling_attachment" {
   role       = aws_iam_role.autoscaling_role.name
 }
 
+resource "aws_iam_role" "cloudwatch_agent_role" {
+  name = "CloudWatchAgentRole"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Action = "sts:AssumeRole",
+        Effect = "Allow",
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy" "cloudwatch_agent_policy" {
+  name        = "CloudWatchAgentPolicy"
+  description = "Policy for CloudWatch Agent"
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "cloudwatch:PutMetricData",
+          "ec2:DescribeTags",
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ],
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "cloudwatch_agent_attachment" {
+  policy_arn = aws_iam_policy.cloudwatch_agent_policy.arn
+  role       = aws_iam_role.cloudwatch_agent_role.name
+}
+
+resource "aws_iam_instance_profile" "cloudwatch_agent_instance_profile" {
+  name = "InsProfileExample"
+
+  role = aws_iam_role.cloudwatch_agent_role.name
+}
+
 
 # Create Auto Scaling Group
 
 resource "aws_launch_configuration" "autoscaling_config" {
   name = "autoscaling_config"
-  image_id = "ami-0c55b159cbfafe1f0"  # Replace with your desired Ubuntu AMI
+  image_id = "ami-0a9a47155910e782f"  # Replace with your desired Ubuntu AMI
   instance_type = "t2.micro"
+  key_name = "test"
+  associate_public_ip_address = true
+  user_data     = data.template_file.user_data.rendered
+
+
+  # Add user data to install and configure CloudWatch agent
+  
+
+  iam_instance_profile = aws_iam_instance_profile.cloudwatch_agent_instance_profile.name
 }
 
 resource "aws_autoscaling_group" "autoscaling_group" {
@@ -93,7 +150,7 @@ resource "aws_autoscaling_group" "autoscaling_group" {
   health_check_type    = "EC2"
   health_check_grace_period = 300
   force_delete          = true
-  vpc_zone_identifier  = [aws_subnet.subnet1.id, aws_subnet.subnet2.id]
+  vpc_zone_identifier  = [data.aws_subnet.subnet1.id, data.aws_subnet.subnet2.id]
   launch_configuration = aws_launch_configuration.autoscaling_config.id
 
   tag {
@@ -103,30 +160,11 @@ resource "aws_autoscaling_group" "autoscaling_group" {
   }
 }
 
-# Create CloudWatch Alarms for Auto Scaling Policies
-resource "aws_cloudwatch_metric_alarm" "scale_up_alarm" {
-  alarm_name          = "ScaleUpAlarm"
-  comparison_operator = "GreaterThanOrEqualToThreshold"
-  evaluation_periods  = 1
-  metric_name         = "GroupDesiredCapacity"
-  namespace           = "AWS/AutoScaling"
-  period              = 300
-  statistic           = "Average"
-  threshold           = 4  # Trigger when desired capacity is greater than or equal to 4
-  alarm_actions       = [aws_autoscaling_policy.scale_up_policy.arn]
-}
+#resource "aws_iam_instance_profile" "cloudwatch_agent_instance_profile" {
+  #name = "InsProfileExample"
 
-resource "aws_cloudwatch_metric_alarm" "scale_down_alarm" {
-  alarm_name          = "ScaleDownAlarm"
-  comparison_operator = "LessThanOrEqualToThreshold"
-  evaluation_periods  = 1
-  metric_name         = "GroupDesiredCapacity"
-  namespace           = "AWS/AutoScaling"
-  period              = 300
-  statistic           = "Average"
-  threshold           = 2  # Trigger when desired capacity is less than or equal to 2
-  alarm_actions       = [aws_autoscaling_policy.scale_down_policy.arn]
-}
+  #role = aws_iam_role.cloudwatch_agent_role.name
+#}
 
 # Create Auto Scaling Policies
 resource "aws_autoscaling_policy" "scale_up_policy" {
@@ -150,6 +188,44 @@ resource "aws_autoscaling_policy" "scale_down_policy" {
 
   autoscaling_group_name = aws_autoscaling_group.autoscaling_group.name
 }
+
+
+# Create CloudWatch Alarms for Auto Scaling Policies
+resource "aws_cloudwatch_metric_alarm" "scale_up_alarm" {
+  alarm_name          = "tf-ScaleUpAlarm"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "5m_load"
+  namespace           = "AWS/AutoScaling/"
+  period              = "300"
+  statistic           = "Average"
+  threshold           = "10"  # Trigger when desired capacity is greater than or equal to 4
+
+  #dimensions = {
+    #InstanceId = "i-08a80e7bc0011ef4b"
+  #}
+
+  dimensions = {
+  AutoScalingGroupName=aws_autoscaling_group.autoscaling_group.arn
+  }
+  #ok_actions          = [aws_sns_topic.scaling_alerts.arn]
+  #ok_actions          = [aws_autoscaling_policy.scale_up_policy.arn]
+  alarm_actions       = [aws_autoscaling_policy.scale_up_policy.arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "scale_down_alarm" {
+  alarm_name          = "ScaleDownAlarm"
+  comparison_operator = "LessThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = "5m_load"
+  namespace           = "AWS/AutoScaling"
+  period              = 300
+  statistic           = "Average"
+  threshold           = 50  # Trigger when desired capacity is less than or equal to 2
+
+  alarm_actions       = [aws_autoscaling_policy.scale_down_policy.arn]
+}
+
 
 # Create EventBridge Rules
 resource "aws_cloudwatch_event_rule" "scale_up_event_rule" {
@@ -220,3 +296,4 @@ data "archive_file" "lambda_function" {
   source_file = "${path.module}/lambda_function.py"
   output_path = "${path.module}/lambda_function.zip"
 }
+
